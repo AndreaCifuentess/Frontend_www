@@ -5,7 +5,7 @@ from typing import List
 from datetime import datetime
 import httpx
 import os
-from .eliminar import eliminar
+
 
 BACKEND_URL = os.getenv("BACKEND_URL")
 if not BACKEND_URL:
@@ -13,6 +13,7 @@ if not BACKEND_URL:
 
 # Definir el modelo de datos
 class Task(rx.Base):
+    id: int 
     titulo: str
     descripcion: str
     completado: bool
@@ -32,6 +33,7 @@ class State(rx.State):
                     tasks_data = response.json()
                     self.tasks = [
                         Task(
+                            id = task ["id"],
                             titulo=task["titulo"],
                             descripcion=task["descripcion"],
                             fecha_creacion=datetime.fromisoformat(task["fecha_creacion"]),
@@ -39,11 +41,27 @@ class State(rx.State):
                         )
                         for task in tasks_data
                     ]
-                    print("Tareas mapeadas:", self.tasks) 
             else:
                     print(f"Error al obtener tareas: {response.text}")
         except Exception as e:
-            print(f"Error en la solicitud: {e}")
+            print(f"Error al obtener las tareas: {e}")
+        
+
+    @rx.event
+    async def delete_task(self, task_id: int):
+        try:
+            print("Id", task_id)
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(f"{BACKEND_URL}/borrar_tarea/{task_id}", headers={"Content-Type": "application/json"})
+                
+            if response.status_code == 200:
+                print(f"Tarea con ID {task_id} eliminada con éxito")
+                # Actualiza las tareas después de eliminar
+                await self.fetch_tasks()
+            else:
+                print(f"Error al eliminar tarea: {response.text}")
+        except Exception as e:
+            print(f"Error en la solicitud: {e}")    
 
     async def on_load(self):
         print("Ejecutando on_load...")
@@ -81,7 +99,8 @@ def show_task(task: Task, index: int):
             ),
         ),
         rx.table.cell(
-            rx.icon("archive-x", size=25, color="blue"),
+            rx.icon("archive-x", size=25, color="blue",
+            on_click=lambda: State.delete_task(task.id), ),
         ),              
     )
 
