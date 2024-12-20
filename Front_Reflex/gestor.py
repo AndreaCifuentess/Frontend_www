@@ -5,7 +5,7 @@ from typing import List
 from datetime import datetime
 import httpx
 import os
-
+import asyncio
 
 BACKEND_URL = os.getenv("BACKEND_URL")
 if not BACKEND_URL:
@@ -13,60 +13,57 @@ if not BACKEND_URL:
 
 # Definir el modelo de datos
 class Task(rx.Base):
-    id: int 
+    id: int
     titulo: str
     descripcion: str
     completado: bool
-    fecha_creacion: datetime  
+    fecha_creacion: datetime
 
 # Definir el estado
 class State(rx.State):
     tasks: List[Task] = []
+    mensaje: str = ""
+    mostrar_mensaje: bool = False 
 
-    # Llamada al backend 
+    # Llamada al backend
     @rx.event
     async def fetch_tasks(self):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f'{BACKEND_URL}/obtener_tareas', headers={"Content-Type": "application/json"})
             if response.status_code == 200:
-                    tasks_data = response.json()
-                    self.tasks = [
-                        Task(
-                            id = task ["id"],
-                            titulo=task["titulo"],
-                            descripcion=task["descripcion"],
-                            fecha_creacion=datetime.fromisoformat(task["fecha_creacion"]),
-                            completado=task["completado"]
-                        )
-                        for task in tasks_data
-                    ]
+                tasks_data = response.json()
+                self.tasks = [
+                    Task(
+                        id=task["id"],
+                        titulo=task["titulo"],
+                        descripcion=task["descripcion"],
+                        fecha_creacion=datetime.fromisoformat(task["fecha_creacion"]),
+                        completado=task["completado"]
+                    )
+                    for task in tasks_data
+                ]
             else:
-                    print(f"Error al obtener tareas: {response.text}")
+                print(f"Error al obtener tareas: {response.text}")
         except Exception as e:
             print(f"Error al obtener las tareas: {e}")
-        
 
     @rx.event
     async def delete_task(self, task_id: int):
         try:
-            print("Id", task_id)
             async with httpx.AsyncClient() as client:
                 response = await client.delete(f"{BACKEND_URL}/borrar_tarea/{task_id}", headers={"Content-Type": "application/json"})
-                
             if response.status_code == 200:
-                print(f"Tarea con ID {task_id} eliminada con éxito")
-                # Actualiza las tareas después de eliminar
+                self.mensaje = f"Tarea eliminada con éxito"
                 await self.fetch_tasks()
             else:
-                print(f"Error al eliminar tarea: {response.text}")
+                self.mensaje = f"Error al eliminar tarea con ID {task_id}"
         except Exception as e:
-            print(f"Error en la solicitud: {e}")    
+            self.mensaje = f"Error en la solicitud: {e}"
 
     async def on_load(self):
-        print("Ejecutando on_load...")
         await self.fetch_tasks()
-      
+
 # Función para mostrar cada tarea
 def show_task(task: Task, index: int):
     return rx.table.row(
@@ -79,7 +76,7 @@ def show_task(task: Task, index: int):
                 rx.dialog.trigger(rx.icon("pencil", size=25, color="blue")),
                 rx.dialog.content(
                     rx.dialog.title("Editar la Tarea", text_align="center"),
-                    rx.dialog.description( 
+                    rx.dialog.description(
                         "Edita los detalles de la tarea.",
                         size="2", margin_bottom="16px", text_align="center"
                     ),
@@ -100,8 +97,8 @@ def show_task(task: Task, index: int):
         ),
         rx.table.cell(
             rx.icon("archive-x", size=25, color="blue",
-            on_click=lambda: State.delete_task(task.id), ),
-        ),              
+                    on_click=lambda: State.delete_task(task.id)),
+        ),
     )
 
 # Página para gestionar las tareas
@@ -121,7 +118,7 @@ def tareas() -> rx.Component:
                 rx.dialog.trigger(rx.button("Agregar Tarea", size="4")),
                 rx.dialog.content(
                     rx.dialog.title("Agregar Tarea", text_align="center"),
-                    rx.dialog.description(  
+                    rx.dialog.description(
                         "Agrega los detalles de la nueva tarea.",
                         size="2", margin_bottom="16px", text_align="center"
                     ),
@@ -163,6 +160,8 @@ def tareas() -> rx.Component:
                 box_shadow="0px 4px 6px rgba(0, 0, 0, 0.1)",
                 width="100%",
             ),
+            # Mostrar mensaje de estado
+            rx.text(State.mensaje, color = "green"),
             height="100vh",
             align_items="center",
             width="80%",
@@ -173,5 +172,5 @@ def tareas() -> rx.Component:
         justify_content="center",
         height="100vh",
         background="rgba(173, 220, 230, 0.2)",
-        on_mount=lambda: State.fetch_tasks() 
+        on_mount=lambda: State.fetch_tasks()
     )
